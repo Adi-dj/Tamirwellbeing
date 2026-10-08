@@ -1058,6 +1058,15 @@ tr:last-child td { border-bottom: 0; }
         const user = window.claude.use ? await window.claude.use("user") : null;
         const can = user ? await user.can("data.write") : null;
         state.access = can === false ? "readonly" : "ok";
+        // Open on the viewer's own log: the page owner is Adi, the invited parent is Uri.
+        if (user && state.sync !== "local") {
+          const me = await user.me();
+          if (me && me.id) {
+            state.person = me.isOwner ? 0 : 1;
+            state.day = todayISO();
+            lsSet("tw.person", state.person);
+          }
+        }
       } catch { state.access = "ok"; }
     }
     render();
