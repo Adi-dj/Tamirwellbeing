@@ -106,6 +106,9 @@ small, .muted { color: var(--muted); }
 .bar i { display: block; height: 100%; border-radius: 6px; background: var(--c, var(--accent)); transition: width .25s; }
 .full { grid-column: 1 / -1; }
 
+.pick { width: auto; min-width: 120px; max-width: 46vw; text-align: left; text-align-last: left; appearance: none; -webkit-appearance: none; padding-right: 30px; cursor: pointer;
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: calc(100% - 16px) 52%, calc(100% - 11px) 52%; background-size: 5px 5px; background-repeat: no-repeat; }
 .times { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .times label { display: grid; gap: 4px; font-size: 0.8rem; color: var(--muted); font-weight: 600; min-width: 0; }
 .times .field { width: 100%; text-align: left; min-height: 42px; }
@@ -257,11 +260,11 @@ tr:last-child td { border-bottom: 0; }
     eatWindow: { label: "Eating window (max)", unit: "h", step: 0.5, min: 4, max: 16 }
   };
   const COUNTERS = {
-    water: { label: "Water", unit: "L", step: 0.25, max: 8, color: "--water", icon: "drop", goal: "water" },
+    water: { label: "Water", unit: "L", step: 0.25, max: 6, color: "--water", icon: "drop", goal: "water", pick: true },
     veg: { label: "Meals with veggies", unit: "", step: 1, max: 10, color: "--veg", icon: "leaf", goal: "veg" },
     sweets: { label: "Sweets", unit: "", step: 1, max: 10, color: "--warm", icon: "candy" },
     alcohol: { label: "Alcohol", unit: "drinks", step: 1, max: 10, color: "--fruit", icon: "glass" },
-    sleep: { label: "Hours slept", unit: "h", step: 0.5, max: 14, color: "--sleep", icon: "moon", goal: "sleep" },
+    sleep: { label: "Hours slept", unit: "h", step: 0.5, max: 12, color: "--sleep", icon: "moon", goal: "sleep", pick: true },
     exercise: { label: "Exercise", unit: "min", step: 5, max: 300, color: "--accent", icon: "pulse", goal: "exercise" },
     mindful: { label: "Mindfulness / quiet time", unit: "min", step: 5, max: 180, color: "--sleep", icon: "sun" }
   };
@@ -550,13 +553,24 @@ tr:last-child td { border-bottom: 0; }
       <span class="ic">${icon(c.icon)}</span>
       <div class="lbl"><span>${c.label}${met ? `<span class="check" title="Goal reached">${icon("check")}</span>` : ""}</span>
         ${goal != null ? `<small>Goal ${n(goal)}${c.unit ? " " + c.unit : ""}</small>` : ""}</div>
-      <div class="ctl">
+      ${c.pick ? pickList(key, c, v) : `<div class="ctl">
         <button type="button" data-act="dec" data-k="${key}" aria-label="Less ${c.label}">−</button>
         <output class="num">${n(v)}${c.unit ? `<small>${v === 1 && c.unit === "drinks" ? "drink" : c.unit}</small>` : ""}</output>
         <button type="button" data-act="inc" data-k="${key}" aria-label="More ${c.label}">+</button>
-      </div>
+      </div>`}
       ${goal != null ? `<div class="bar"><i style="width:${pct}%"></i></div>` : ""}
     </div>`;
+  }
+
+  // One tap opens the iPhone picker wheel instead of many taps on +.
+  function pickList(key, c, v) {
+    const opts = [];
+    for (let x = 0; x <= c.max + 1e-9; x += c.step) opts.push(Math.round(x * 100) / 100);
+    if (!opts.includes(v)) opts.push(v), opts.sort((a, b) => a - b);
+    const label = (x) => (x === 0 ? "Choose…" : `${n(x)} ${c.unit}`);
+    return `<select class="field pick" id="f-${key}" data-pick="${key}" aria-label="${c.label}">
+      ${opts.map((x) => `<option value="${x}" ${x === v ? "selected" : ""}>${label(x)}</option>`).join("")}
+    </select>`;
   }
 
   function windowSummary(e) {
@@ -1043,6 +1057,14 @@ tr:last-child td { border-bottom: 0; }
 
   // Time pickers on iPhone report the final value on "change".
   document.addEventListener("change", (ev) => {
+    const pk = ev.target.dataset && ev.target.dataset.pick;
+    if (pk) {
+      const val = parseFloat(ev.target.value) || 0;
+      editEntry((e) => { e[pk] = val; });
+      ev.target.blur();
+      render();
+      return;
+    }
     const f = ev.target.dataset && ev.target.dataset.field;
     if (f === "eatStart" || f === "eatEnd") ev.target.dispatchEvent(new Event("input", { bubbles: true }));
   });
