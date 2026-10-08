@@ -181,6 +181,8 @@ tr:last-child td { border-bottom: 0; }
 .empty { text-align: center; padding: 20px 8px; color: var(--muted); display: grid; gap: 6px; justify-items: center; }
 .empty svg { width: 34px; height: 34px; color: var(--accent); opacity: .7; }
 
+.banner { display: grid; gap: 4px; padding: 12px 14px; border-radius: 14px; background: color-mix(in srgb, var(--warm) 16%, var(--surface)); border: 1px solid color-mix(in srgb, var(--warm) 45%, transparent); font-size: 0.88rem; }
+.banner b { font-size: 0.95rem; }
 .steps-list { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
 .note { font-size: 0.85rem; color: var(--muted); }
 
@@ -294,7 +296,8 @@ tr:last-child td { border-bottom: 0; }
     weightDate: todayISO(),
     weightText: "",
     confirmDelete: null,
-    sync: "connecting"
+    sync: "connecting",
+    access: "checking" // "ok" | "readonly" | "checking"
   };
 
   const entryId = (person, date) => `p${person}_${date}`;
@@ -303,6 +306,10 @@ tr:last-child td { border-bottom: 0; }
 
   // ---------- Storage adapters ----------
   let store = null;
+  let dbRef = null;
+  // Edits not yet confirmed by the shared store, kept on this phone so nothing is lost.
+  const unsynced = lsGet("tw.unsynced", {});
+  const saveUnsynced = () => lsSet("tw.unsynced", unsynced);
   const dirty = new Set();
   const timers = {};
   const inflight = {};
@@ -325,13 +332,17 @@ tr:last-child td { border-bottom: 0; }
   }
 
   function dbStore(db) {
+    dbRef = db;
+    let first = true;
     db.collection("entries").onSnapshot((snap) => {
       const next = {};
       snap.docs.forEach((d) => { next[d.id] = d.data(); });
+      Object.keys(unsynced).forEach((id) => { next[id] = unsynced[id]; });
       dirty.forEach((id) => { if (id !== "__settings" && state.entries[id]) next[id] = state.entries[id]; });
       state.entries = next;
       state.sync = "synced";
       requestRender();
+      if (first) { first = false; uploadFromPhone(); }
     }, () => { state.sync = "error"; requestRender(); });
 
     db.doc("settings/main").onSnapshot((snap) => {
@@ -340,9 +351,44 @@ tr:last-child td { border-bottom: 0; }
     }, () => {});
 
     return {
-      saveEntry: (id) => db.doc("entries/" + id).set(state.entries[id]),
+      saveEntry: async (id) => {
+        const sent = state.entries[id];
+        await db.doc("entries/" + id).set(sent);
+        if (unsynced[id] === sent) { delete unsynced[id]; saveUnsynced(); }
+        if (state.access !== "ok") { state.access = "ok"; requestRender(); }
+      },
       saveSettings: () => db.doc("settings/main").set(state.settings)
     };
+  }
+
+  // Send days that were saved only on this phone (no connection, or no edit access yet).
+  let uploading = false;
+  async function uploadFromPhone() {
+    if (!dbRef || uploading || state.access === "readonly") return;
+    uploading = true;
+    const legacy = lsGet("tw.entries", {});
+    const ids = [...new Set([...Object.keys(legacy), ...Object.keys(unsynced)])];
+    let sent = 0;
+    for (const id of ids) {
+      const local = unsynced[id] || legacy[id];
+      const drop = () => { delete unsynced[id]; delete legacy[id]; };
+      if (!hasData(local)) { drop(); continue; }
+      try {
+        await dbRef.doc("entries/" + id).set(local);
+        state.entries[id] = local;
+        drop();
+        sent++;
+        state.access = "ok";
+      } catch (e) {
+        if (e && e.code === "invalid_argument") state.access = "readonly";
+        break;
+      }
+    }
+    lsSet("tw.entries", legacy);
+    saveUnsynced();
+    uploading = false;
+    if (sent) toast(`Shared ${sent} day${sent === 1 ? "" : "s"} that were saved on this phone.`);
+    requestRender();
   }
 
   function scheduleSave(id) {
@@ -360,7 +406,7 @@ tr:last-child td { border-bottom: 0; }
       else await store.saveEntry(id);
     } catch (e) {
       const code = e && e.code;
-      if (code === "invalid_argument") toast("You can view this but not edit it. Ask the owner to share it with you as an Editor.");
+      if (code === "invalid_argument") { state.access = "readonly"; requestRender(); }
       else if (code === "quota_exceeded") toast("Storage is full, so this change wasn't saved.");
       else toast("Couldn't save. Check your connection and try again.");
     } finally {
@@ -376,6 +422,7 @@ tr:last-child td { border-bottom: 0; }
     const e = { ...(state.entries[id] || blankEntry(person, date)) };
     fn(e);
     state.entries[id] = e;
+    if (dbRef) { unsynced[id] = e; saveUnsynced(); }
     scheduleSave(id);
   }
 
@@ -441,9 +488,25 @@ tr:last-child td { border-bottom: 0; }
   }
 
   function topBar() {
-    const label = { connecting: "Connecting…", synced: "Shared & saved", local: "Saved on this device", error: "Offline" }[state.sync];
-    const cls = state.sync === "synced" || state.sync === "local" ? "ok" : state.sync === "error" ? "err" : "";
-    return `<div class="top"><div class="brand">${icon("heart")}Tamir Wellbeing</div><span class="sync ${cls}">${label}</span></div>`;
+    const label = state.access === "readonly" && state.sync === "synced" ? "View only"
+      : { connecting: "Connecting…", synced: "Shared & saved", local: "Only on this phone", error: "Offline" }[state.sync];
+    const cls = state.sync === "synced" && state.access !== "readonly" ? "ok" : state.sync === "connecting" ? "" : "err";
+    return `<div class="top"><div class="brand">${icon("heart")}Tamir Wellbeing</div><span class="sync ${cls}">${label}</span></div>${banner()}`;
+  }
+
+  function banner() {
+    const pendingCount = Object.keys(unsynced).length + Object.keys(lsGet("tw.entries", {})).length;
+    if (state.sync === "local") {
+      return `<div class="banner" role="alert"><b>Not shared yet</b><span>What you enter is saved only on this phone, so the other parent can't see it.
+        To fix it, open the tracker from its claude.ai link in Safari while signed in to claude.ai.
+        Days saved here are shared automatically once it connects.</span></div>`;
+    }
+    if (state.access === "readonly") {
+      return `<div class="banner" role="alert"><b>You can view but not add yet</b><span>This phone can see the family log but isn't allowed to save to it.
+        The owner needs to invite you by email as an <b>Editor</b> and turn off link sharing (see Settings).
+        ${pendingCount ? `${pendingCount} day${pendingCount === 1 ? " is" : "s are"} kept on this phone and will be shared then.` : "Your entries are kept on this phone until then."}</span></div>`;
+    }
+    return "";
   }
 
   function counterRow(key, e) {
@@ -782,9 +845,15 @@ tr:last-child td { border-bottom: 0; }
 
       <section class="card" aria-label="Sharing">
         <h2>Both parents, one family log</h2>
-        <p class="note" style="margin:0">${state.sync === "local"
-          ? "Right now entries are saved only in this browser. Open the tracker from its claude.ai link to share entries between both phones."
-          : "Entries are saved online and both parents see the same data. To let the other parent log too, share this page with them as an <b>Editor</b> from the Share menu."}</p>
+        <p class="note" style="margin:0">Status on this phone: <b>${state.sync === "local" ? "not connected, saving only on this phone"
+          : state.access === "readonly" ? "connected, view only" : state.sync === "synced" ? "connected and sharing" : "connecting…"}</b></p>
+        <p class="note" style="margin:0">For both phones to share the same log, the owner of this page does this once on claude.ai:</p>
+        <ol class="steps-list note">
+          <li>Open the page's <b>Share</b> menu.</li>
+          <li>Turn off <b>Anyone with the link</b>. Only invited people can save while link sharing is on.</li>
+          <li>Invite the other parent's email address as an <b>Editor</b>.</li>
+        </ol>
+        <p class="note" style="margin:0">The other parent then signs in to claude.ai with that email in Safari and opens the link.</p>
       </section>`;
   }
 
@@ -908,6 +977,13 @@ tr:last-child td { border-bottom: 0; }
     let db = null;
     try { db = window.claude && window.claude.use ? await window.claude.use("db") : null; } catch { db = null; }
     store = db ? dbStore(db) : localStore();
+    if (db) {
+      try {
+        const user = window.claude.use ? await window.claude.use("user") : null;
+        const can = user ? await user.can("data.write") : null;
+        state.access = can === false ? "readonly" : "ok";
+      } catch { state.access = "ok"; }
+    }
     render();
   })();
 })();
