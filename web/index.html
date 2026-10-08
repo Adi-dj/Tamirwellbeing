@@ -106,9 +106,23 @@ small, .muted { color: var(--muted); }
 .bar i { display: block; height: 100%; border-radius: 6px; background: var(--c, var(--accent)); transition: width .25s; }
 .full { grid-column: 1 / -1; }
 
-.pick { width: auto; min-width: 120px; max-width: 46vw; text-align: left; text-align-last: left; appearance: none; -webkit-appearance: none; padding-right: 30px; cursor: pointer;
-  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
-  background-position: calc(100% - 16px) 52%, calc(100% - 11px) 52%; background-size: 5px 5px; background-repeat: no-repeat; }
+.ctl .pick { width: auto; height: 38px; min-width: 70px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface-2); font-size: 1.05rem; font-weight: 700; padding: 0 10px; display: inline-flex; align-items: baseline; justify-content: center; gap: 2px; line-height: 38px; }
+.ctl .pick small { font-weight: 500; font-size: 0.75rem; }
+
+.sheet-back { position: fixed; inset: 0; z-index: 30; background: color-mix(in srgb, var(--ink) 40%, transparent); display: flex; align-items: flex-end; justify-content: center; }
+.sheet-back[hidden], .toast[hidden] { display: none; }
+.sheet { background: var(--surface); width: 100%; max-width: 560px; border-radius: 20px 20px 0 0; padding: 4px 16px calc(16px + env(safe-area-inset-bottom, 0px)); }
+.sheet-head { display: flex; justify-content: space-between; align-items: center; padding: 6px 0 10px; }
+.sheet-head b { font-family: var(--font-display); font-size: 1.05rem; }
+.sheet-head button { border: 0; background: none; color: var(--accent); font-weight: 700; padding: 10px 6px; font-size: 1rem; }
+.sheet-head button.muted { color: var(--muted); font-weight: 600; }
+.wheel-wrap { position: relative; height: 220px; isolation: isolate; }
+.wheel-band { position: absolute; left: 0; right: 0; top: 90px; height: 40px; border-radius: 10px; background: var(--surface-2); z-index: -1; pointer-events: none; }
+.wheel { height: 100%; overflow-y: scroll; scroll-snap-type: y mandatory; padding: 90px 0; scrollbar-width: none; overscroll-behavior: contain; outline: none;
+  -webkit-mask-image: linear-gradient(transparent, #000 30%, #000 70%, transparent); mask-image: linear-gradient(transparent, #000 30%, #000 70%, transparent); }
+.wheel::-webkit-scrollbar { display: none; }
+.wheel .item { height: 40px; line-height: 40px; text-align: center; scroll-snap-align: center; font-size: 1.25rem; color: var(--muted); font-variant-numeric: tabular-nums; cursor: pointer; }
+.wheel .item.sel { color: var(--ink); font-weight: 700; }
 .times { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .times label { display: grid; gap: 4px; font-size: 0.8rem; color: var(--muted); font-weight: 600; min-width: 0; }
 .times .field { width: 100%; text-align: left; min-height: 42px; }
@@ -208,6 +222,16 @@ tr:last-child td { border-bottom: 0; }
 <div class="app" id="app"></div>
 <nav class="tabs" aria-label="Sections"><div class="in" id="tabs"></div></nav>
 <div class="toast" id="toast" role="status" hidden></div>
+<div class="sheet-back" id="sheet" data-act="sheet-cancel" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+    <div class="sheet-head">
+      <button type="button" class="muted" data-act="sheet-cancel">Cancel</button>
+      <b id="sheet-title"></b>
+      <button type="button" data-act="sheet-done">Done</button>
+    </div>
+    <div class="wheel-wrap"><div class="wheel-band"></div><div class="wheel" id="wheel" tabindex="0" aria-label="Scroll to choose"></div></div>
+  </div>
+</div>
 
 <script>
 (() => {
@@ -553,24 +577,56 @@ tr:last-child td { border-bottom: 0; }
       <span class="ic">${icon(c.icon)}</span>
       <div class="lbl"><span>${c.label}${met ? `<span class="check" title="Goal reached">${icon("check")}</span>` : ""}</span>
         ${goal != null ? `<small>Goal ${n(goal)}${c.unit ? " " + c.unit : ""}</small>` : ""}</div>
-      ${c.pick ? pickList(key, c, v) : `<div class="ctl">
+      <div class="ctl">
         <button type="button" data-act="dec" data-k="${key}" aria-label="Less ${c.label}">−</button>
-        <output class="num">${n(v)}${c.unit ? `<small>${v === 1 && c.unit === "drinks" ? "drink" : c.unit}</small>` : ""}</output>
+        ${c.pick
+          ? `<button type="button" class="pick num" data-act="open-wheel" data-k="${key}" aria-label="Choose ${c.label}, now ${n(v)} ${c.unit}">${n(v)}<small>${c.unit}</small></button>`
+          : `<output class="num">${n(v)}${c.unit ? `<small>${v === 1 && c.unit === "drinks" ? "drink" : c.unit}</small>` : ""}</output>`}
         <button type="button" data-act="inc" data-k="${key}" aria-label="More ${c.label}">+</button>
-      </div>`}
+      </div>
       ${goal != null ? `<div class="bar"><i style="width:${pct}%"></i></div>` : ""}
     </div>`;
   }
 
-  // One tap opens the iPhone picker wheel instead of many taps on +.
-  function pickList(key, c, v) {
+  // Scroll wheel (like the time picker) for water and sleep.
+  const ITEM_H = 40;
+  const wheelState = { key: null, opts: [] };
+  function wheelOptions(c, v) {
     const opts = [];
     for (let x = 0; x <= c.max + 1e-9; x += c.step) opts.push(Math.round(x * 100) / 100);
-    if (!opts.includes(v)) opts.push(v), opts.sort((a, b) => a - b);
-    const label = (x) => (x === 0 ? "Choose…" : `${n(x)} ${c.unit}`);
-    return `<select class="field pick" id="f-${key}" data-pick="${key}" aria-label="${c.label}">
-      ${opts.map((x) => `<option value="${x}" ${x === v ? "selected" : ""}>${label(x)}</option>`).join("")}
-    </select>`;
+    if (!opts.includes(v)) { opts.push(v); opts.sort((a, b) => a - b); }
+    return opts;
+  }
+  function wheelIndex() {
+    const w = document.getElementById("wheel");
+    return Math.max(0, Math.min(wheelState.opts.length - 1, Math.round(w.scrollTop / ITEM_H)));
+  }
+  function markWheel() {
+    const i = wheelIndex();
+    document.querySelectorAll("#wheel .item").forEach((el, j) => el.classList.toggle("sel", i === j));
+  }
+  function openWheel(key) {
+    const c = COUNTERS[key];
+    const e = getEntry(state.person, state.day);
+    const v = e ? e[key] || 0 : 0;
+    wheelState.key = key;
+    wheelState.opts = wheelOptions(c, v);
+    document.getElementById("sheet-title").textContent = c.label;
+    const w = document.getElementById("wheel");
+    w.innerHTML = wheelState.opts.map((x, i) => `<div class="item" data-act="wheel-item" data-v="${i}">${x === 0 ? "0" : n(x)} ${c.unit}</div>`).join("");
+    document.getElementById("sheet").hidden = false;
+    const idx = Math.max(0, wheelState.opts.indexOf(v));
+    requestAnimationFrame(() => { w.scrollTop = idx * ITEM_H; markWheel(); w.focus({ preventScroll: true }); });
+  }
+  function closeWheel(save) {
+    if (save && wheelState.key) {
+      const val = wheelState.opts[wheelIndex()];
+      const key = wheelState.key;
+      editEntry((e) => { e[key] = val; });
+    }
+    wheelState.key = null;
+    document.getElementById("sheet").hidden = true;
+    render();
   }
 
   function windowSummary(e) {
@@ -972,6 +1028,13 @@ tr:last-child td { border-bottom: 0; }
     const b = ev.target.closest("[data-act]");
     if (!b || b.disabled) return;
     const act = b.dataset.act, k = b.dataset.k, v = b.dataset.v;
+    if (act === "open-wheel") { openWheel(k); return; }
+    if (act === "sheet-done") { closeWheel(true); return; }
+    if (act === "sheet-cancel") { if (b.id !== "sheet" || ev.target === b) closeWheel(false); return; }
+    if (act === "wheel-item") {
+      document.getElementById("wheel").scrollTo({ top: Number(v) * ITEM_H, behavior: "smooth" });
+      return;
+    }
     switch (act) {
       case "tab":
         state.tab = v; state.confirmDelete = null;
@@ -1057,16 +1120,19 @@ tr:last-child td { border-bottom: 0; }
 
   // Time pickers on iPhone report the final value on "change".
   document.addEventListener("change", (ev) => {
-    const pk = ev.target.dataset && ev.target.dataset.pick;
-    if (pk) {
-      const val = parseFloat(ev.target.value) || 0;
-      editEntry((e) => { e[pk] = val; });
-      ev.target.blur();
-      render();
-      return;
-    }
     const f = ev.target.dataset && ev.target.dataset.field;
     if (f === "eatStart" || f === "eatEnd") ev.target.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+
+  const wheelEl = document.getElementById("wheel");
+  wheelEl.addEventListener("scroll", () => requestAnimationFrame(markWheel), { passive: true });
+  wheelEl.addEventListener("keydown", (ev) => {
+    if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+      ev.preventDefault();
+      const i = wheelIndex() + (ev.key === "ArrowDown" ? 1 : -1);
+      wheelEl.scrollTo({ top: i * ITEM_H, behavior: "smooth" });
+    } else if (ev.key === "Enter") closeWheel(true);
+    else if (ev.key === "Escape") closeWheel(false);
   });
 
   // ---------- Start ----------
