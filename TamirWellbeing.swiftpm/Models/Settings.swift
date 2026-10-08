@@ -13,8 +13,8 @@ enum Keys {
 }
 
 enum Defaults {
-    static let parentName0 = "Parent 1"
-    static let parentName1 = "Parent 2"
+    static let parentName0 = "Adi"
+    static let parentName1 = "Uri"
     static let goalWater = 2.5
     static let goalVeg = 3
     static let goalSleep = 7.0
