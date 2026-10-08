@@ -106,6 +106,10 @@ small, .muted { color: var(--muted); }
 .bar i { display: block; height: 100%; border-radius: 6px; background: var(--c, var(--accent)); transition: width .25s; }
 .full { grid-column: 1 / -1; }
 
+.times { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.times label { display: grid; gap: 4px; font-size: 0.8rem; color: var(--muted); font-weight: 600; min-width: 0; }
+.times .field { width: 100%; text-align: left; min-height: 42px; }
+.win { font-weight: 700; font-size: 1.05rem; white-space: nowrap; }
 .seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
 .seg button { border: 1px solid var(--line); background: var(--surface); border-radius: 12px; padding: 9px 4px; font-weight: 600; font-size: 0.9rem; }
 .seg button[aria-pressed="true"] { background: var(--warm); border-color: var(--warm); color: var(--accent-ink); }
@@ -227,6 +231,7 @@ tr:last-child td { border-bottom: 0; }
     right: '<path d="m9 18 6-6-6-6"/>',
     check: '<path d="M20 6 9 17l-5-5"/>',
     trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/>',
+    clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
     glass: '<path d="M7 3h10l-.6 5.5a4.4 4.4 0 0 1-8.8 0z"/><path d="M12 13v8M8 21h8"/>',
     heart: '<path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/>'
   };
@@ -242,13 +247,14 @@ tr:last-child td { border-bottom: 0; }
   const fmtDay = (s, opts) => parse(s).toLocaleDateString("en-GB", opts);
 
   // ---------- Definitions ----------
-  const DEFAULT_SETTINGS = { name0: "Adi", name1: "Uri", goals: { water: 2.5, veg: 3, sleep: 7, exercise: 30, steps: 8000 } };
+  const DEFAULT_SETTINGS = { name0: "Adi", name1: "Uri", goals: { water: 2.5, veg: 3, sleep: 7, exercise: 30, steps: 8000, eatWindow: 8 } };
   const GOAL_DEFS = {
     water: { label: "Water", unit: "L", step: 0.25, min: 0.5, max: 6 },
     veg: { label: "Meals with veggies", unit: "", step: 1, min: 1, max: 6 },
     sleep: { label: "Sleep", unit: "h", step: 0.5, min: 4, max: 12 },
     exercise: { label: "Exercise", unit: "min", step: 5, min: 5, max: 180 },
-    steps: { label: "Steps", unit: "", step: 500, min: 1000, max: 30000 }
+    steps: { label: "Steps", unit: "", step: 500, min: 1000, max: 30000 },
+    eatWindow: { label: "Eating window (max)", unit: "h", step: 0.5, min: 4, max: 16 }
   };
   const COUNTERS = {
     water: { label: "Water", unit: "L", step: 0.25, max: 8, color: "--water", icon: "drop", goal: "water" },
@@ -272,15 +278,35 @@ tr:last-child td { border-bottom: 0; }
     sleep: { label: "Sleep", unit: "h", color: "--sleep" },
     veg: { label: "Veggies", unit: "meals", color: "--veg" },
     exercise: { label: "Exercise", unit: "min", color: "--accent" },
-    steps: { label: "Steps", unit: "steps", color: "--water" }
+    steps: { label: "Steps", unit: "steps", color: "--water" },
+    eatWindow: { label: "Eating window", unit: "h", color: "--accent" }
   };
+
+  // Eating window: "HH:MM" first and last bite; crossing midnight is allowed.
+  const toMin = (t) => {
+    if (!t) return null;
+    const [h, m] = String(t).split(":").map(Number);
+    return Number.isFinite(h) && Number.isFinite(m) ? h * 60 + m : null;
+  };
+  const windowHours = (e) => {
+    if (!e) return null;
+    const a = toMin(e.eatStart), b = toMin(e.eatEnd);
+    if (a == null || b == null) return null;
+    return ((b - a + 1440) % 1440) / 60;
+  };
+  const fmtDur = (h) => {
+    if (h == null) return "—";
+    const total = Math.round(h * 60), m = total % 60;
+    return `${Math.floor(total / 60)} h${m ? ` ${m} min` : ""}`;
+  };
+  const metricValue = (e, metric) => (!e ? 0 : metric === "eatWindow" ? windowHours(e) || 0 : e[metric] || 0);
 
   const blankEntry = (person, date) => ({
     person, date, water: 0, veg: 0, sweets: 0, alcohol: 0, carbs: 0, sleep: 0, sleepQ: 0,
-    exercise: 0, steps: 0, mindful: 0, mood: 0, energy: 0, stress: 0, hunger: 0, treat: false, weight: null, notes: ""
+    exercise: 0, steps: 0, mindful: 0, mood: 0, energy: 0, stress: 0, hunger: 0, eatStart: "", eatEnd: "", treat: false, weight: null, notes: ""
   });
   const hasData = (e) => !!e && (e.water > 0 || e.veg > 0 || e.sweets > 0 || e.alcohol > 0 || e.carbs > 0 || e.sleep > 0 ||
-    e.sleepQ > 0 || e.exercise > 0 || e.steps > 0 || e.mindful > 0 || e.mood > 0 || e.energy > 0 || e.stress > 0 || e.hunger > 0 ||
+    e.sleepQ > 0 || e.exercise > 0 || e.steps > 0 || e.mindful > 0 || e.mood > 0 || e.energy > 0 || e.stress > 0 || e.hunger > 0 || !!e.eatStart || !!e.eatEnd ||
     e.treat || e.weight != null || (e.notes || "").trim() !== "");
 
   // ---------- State ----------
@@ -469,6 +495,7 @@ tr:last-child td { border-bottom: 0; }
       energy: avg(pos("energy")),
       stress: avg(pos("stress")),
       hunger: avg(pos("hunger")),
+      eatWindow: avg(list.map(windowHours).filter((v) => v != null)),
       weightChange: weights.length > 1 ? weights[weights.length - 1] - weights[0] : null,
       latestWeight: weights.length ? weights[weights.length - 1] : null,
       goalDays: {
@@ -476,7 +503,8 @@ tr:last-child td { border-bottom: 0; }
         veg: list.filter((e) => e.veg >= g.veg).length,
         sleep: list.filter((e) => e.sleep >= g.sleep).length,
         exercise: list.filter((e) => e.exercise >= g.exercise).length,
-        steps: list.filter((e) => e.steps >= g.steps).length
+        steps: list.filter((e) => e.steps >= g.steps).length,
+        eatWindow: list.filter((e) => { const w = windowHours(e); return w != null && w <= g.eatWindow; }).length
       }
     };
   }
@@ -531,6 +559,29 @@ tr:last-child td { border-bottom: 0; }
     </div>`;
   }
 
+  function windowSummary(e) {
+    const w = windowHours(e), goal = state.settings.goals.eatWindow;
+    if (w == null) return "Set both times";
+    return w <= goal ? `Within ${n(goal)} h goal` : `Over by ${fmtDur(w - goal)}`;
+  }
+
+  function windowRow(e) {
+    const w = windowHours(e), goal = state.settings.goals.eatWindow;
+    const met = w != null && w <= goal;
+    const over = w != null && w > goal;
+    return `<div class="row" style="--c: var(${over ? "--warm" : "--accent"})">
+      <span class="ic">${icon("clock")}</span>
+      <div class="lbl"><span>Eating window${met ? `<span class="check" title="Within goal">${icon("check")}</span>` : ""}</span>
+        <small id="f-window-note">${windowSummary(e)}</small></div>
+      <output class="num win" id="f-window">${fmtDur(w)}</output>
+      <div class="times full">
+        <label for="f-eatStart">First bite<input class="field" type="time" id="f-eatStart" data-field="eatStart" value="${e && e.eatStart ? e.eatStart : ""}"></label>
+        <label for="f-eatEnd">Last bite<input class="field" type="time" id="f-eatEnd" data-field="eatEnd" value="${e && e.eatEnd ? e.eatEnd : ""}"></label>
+      </div>
+      ${w != null ? `<div class="bar full"><i style="width:${Math.min(100, (w / goal) * 100)}%"></i></div>` : ""}
+    </div>`;
+  }
+
   function ratingRow(key, e) {
     const r = RATINGS[key];
     const v = e ? e[key] || 0 : 0;
@@ -566,6 +617,7 @@ tr:last-child td { border-bottom: 0; }
 
       <section class="card" aria-label="Food and drink">
         <h2>Food & drink</h2>
+        ${windowRow(e)}
         ${counterRow("water", e)}
         ${counterRow("veg", e)}
         <div class="row" style="--c: var(--warm)">
@@ -620,7 +672,7 @@ tr:last-child td { border-bottom: 0; }
     const m = CHART_METRICS[metric];
     const goal = state.settings.goals[metric];
     const days = Array.from({ length: 7 }, (_, i) => addDays(start, i));
-    const vals = days.map((d) => { const e = getEntry(state.person, d); return e ? e[metric] || 0 : 0; });
+    const vals = days.map((d) => metricValue(getEntry(state.person, d), metric));
     const top = Math.max(goal * 1.25, ...vals) || 1;
     const W = 320, H = 170, L = 34, R = 6, T = 12, B = 22;
     const pw = W - L - R, ph = H - T - B;
@@ -635,7 +687,7 @@ tr:last-child td { border-bottom: 0; }
       const e = getEntry(state.person, d);
       const v = vals[i];
       const x = L + slot * i + (slot - bw) / 2;
-      const color = e && e.treat ? "var(--treat)" : `var(${m.color})`;
+      const color = e && e.treat ? "var(--treat)" : metric === "eatWindow" && v > goal ? "var(--warm)" : `var(${m.color})`;
       if (v > 0) s += `<rect x="${x}" y="${y(v)}" width="${bw}" height="${Math.max(2, y(0) - y(v))}" rx="5" fill="${color}"/>`;
       else s += `<rect x="${x}" y="${y(0) - 2}" width="${bw}" height="2" rx="1" fill="var(--line)"/>`;
       s += `<text x="${x + bw / 2}" y="${H - 6}" text-anchor="middle">${fmtDay(d, { weekday: "narrow" })}</text>`;
@@ -693,6 +745,7 @@ tr:last-child td { border-bottom: 0; }
         ${goalRow("sleep", `Sleep ${n(g.sleep)} h+`, "--sleep")}
         ${goalRow("exercise", `Exercise ${g.exercise} min+`, "--accent")}
         ${goalRow("steps", `${g.steps.toLocaleString("en-US")}+ steps`, "--water")}
+        ${goalRow("eatWindow", `Eating window ${n(g.eatWindow)} h or less`, "--accent")}
       </section>
 
       <section class="card" aria-label="Daily chart">
@@ -700,10 +753,11 @@ tr:last-child td { border-bottom: 0; }
           ${Object.entries(CHART_METRICS).map(([k, m]) => `<button type="button" data-act="chart" data-v="${k}" aria-pressed="${state.chart === k}">${m.label}</button>`).join("")}
         </div>
         ${barChart(start, state.chart)}
-        <small>${CHART_METRICS[state.chart].label} per day (${CHART_METRICS[state.chart].unit}). Pink bars are treat days. Dashed line is the goal.</small>
+        <small>${CHART_METRICS[state.chart].label} per day (${CHART_METRICS[state.chart].unit}). Pink bars are treat days. ${state.chart === "eatWindow" ? "Dashed line is the maximum; orange bars went over it." : "Dashed line is the goal."}</small>
       </section>
 
       <div class="tiles">
+        ${tile("Eating window", fmtDur(st.eatWindow), "--accent")}
         ${tile("Water per day", nOr(st.water, " L", 2), "--water")}
         ${tile("Veggie meals", st.vegTotal, "--veg")}
         ${tile("Sleep per night", nOr(st.sleep, " h"), "--sleep")}
@@ -718,7 +772,7 @@ tr:last-child td { border-bottom: 0; }
         ${tile("Energy", rating(st.energy), "--accent")}
         ${tile("Stress", rating(st.stress), "--fruit")}
         ${tile("Hunger level", rating(st.hunger), "--warm")}
-        ${tile("Weight change", signedKg(st.weightChange), "--sleep", true)}
+        ${tile("Weight change", signedKg(st.weightChange), "--sleep")}
       </div>
 
       <section class="card" aria-label="Family this week">
@@ -726,6 +780,7 @@ tr:last-child td { border-bottom: 0; }
         <div class="table-wrap"><table>
           <thead><tr><th></th><th>${esc(name(0))}</th><th>${esc(name(1))}</th></tr></thead>
           <tbody>
+            <tr><td>Eating window</td><td>${fmtDur(a.eatWindow)}</td><td>${fmtDur(b.eatWindow)}</td></tr>
             <tr><td>Water per day</td><td>${nOr(a.water, " L", 2)}</td><td>${nOr(b.water, " L", 2)}</td></tr>
             <tr><td>Veggie meals</td><td>${a.vegTotal}</td><td>${b.vegTotal}</td></tr>
             <tr><td>Sleep per night</td><td>${nOr(a.sleep, " h")}</td><td>${nOr(b.sleep, " h")}</td></tr>
@@ -964,7 +1019,15 @@ tr:last-child td { border-bottom: 0; }
         if (f === "steps") e.steps = Math.min(200000, parseInt(el.value.replace(/\D/g, ""), 10) || 0);
         else if (f === "weight") { const kg = parseFloat(el.value.replace(",", ".")); e.weight = kg > 0 && kg < 400 ? kg : null; }
         else if (f === "notes") e.notes = el.value.slice(0, 2000);
+        else if (f === "eatStart" || f === "eatEnd") e[f] = /^\d{2}:\d{2}/.test(el.value) ? el.value.slice(0, 5) : "";
       });
+      if (f === "eatStart" || f === "eatEnd") {
+        const e = getEntry(state.person, state.day);
+        const out = document.getElementById("f-window"), note = document.getElementById("f-window-note");
+        if (out) out.textContent = fmtDur(windowHours(e));
+        if (note) note.textContent = windowSummary(e);
+        requestRender();
+      }
     } else if (el.dataset.setting) {
       const key = el.dataset.setting;
       editSettings((s) => { s[key] = el.value.slice(0, 24); });
@@ -976,6 +1039,12 @@ tr:last-child td { border-bottom: 0; }
     } else if (el.dataset.wfield === "date") {
       if (el.value) state.weightDate = el.value > todayISO() ? todayISO() : el.value;
     }
+  });
+
+  // Time pickers on iPhone report the final value on "change".
+  document.addEventListener("change", (ev) => {
+    const f = ev.target.dataset && ev.target.dataset.field;
+    if (f === "eatStart" || f === "eatEnd") ev.target.dispatchEvent(new Event("input", { bubbles: true }));
   });
 
   // ---------- Start ----------
