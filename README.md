@@ -2,6 +2,15 @@
 
 An iPhone app (SwiftUI + SwiftData, iOS 17+) for the two Tamir parents to track daily wellbeing habits, see a weekly summary, mark treat days and follow their weight.
 
+## Easiest way: the web version (no Mac needed)
+
+`web/index.html` is the same tracker as a web page, published at
+https://claude.ai/artifact/8ChtkbhrfAMwaxJrszqd73. Open the link in Safari on the iPhone,
+tap **Share → Add to Home Screen**, and it opens like an app. Entries are saved online, so both
+parents see the same data once the page is shared with the second parent as an Editor.
+
+The native iPhone app below needs a Mac with Xcode to install.
+
 ## Features
 
 **Two parents, one app.** Switch between parents with the segmented control at the top of each screen. Names are editable in Settings.
