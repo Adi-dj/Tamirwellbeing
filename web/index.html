@@ -286,6 +286,7 @@ tr:last-child td { border-bottom: 0; }
   const COUNTERS = {
     water: { label: "Water", unit: "L", step: 0.25, max: 6, color: "--water", icon: "drop", goal: "water", pick: true },
     veg: { label: "Meals with veggies", unit: "", step: 1, max: 10, color: "--veg", icon: "leaf", goal: "veg" },
+    fruit: { label: "Fruit", unit: "", step: 1, max: 10, color: "--fruit", icon: "apple" },
     sweets: { label: "Sweets", unit: "", step: 1, max: 10, color: "--warm", icon: "candy" },
     alcohol: { label: "Alcohol", unit: "drinks", step: 1, max: 10, color: "--fruit", icon: "glass" },
     sleep: { label: "Hours slept", unit: "h", step: 0.5, max: 12, color: "--sleep", icon: "moon", goal: "sleep", pick: true },
@@ -329,10 +330,10 @@ tr:last-child td { border-bottom: 0; }
   const metricValue = (e, metric) => (!e ? 0 : metric === "eatWindow" ? windowHours(e) || 0 : e[metric] || 0);
 
   const blankEntry = (person, date) => ({
-    person, date, water: 0, veg: 0, sweets: 0, alcohol: 0, carbs: 0, sleep: 0, sleepQ: 0,
+    person, date, water: 0, veg: 0, fruit: 0, sweets: 0, alcohol: 0, carbs: 0, sleep: 0, sleepQ: 0,
     exercise: 0, steps: 0, mindful: 0, mood: 0, energy: 0, stress: 0, hunger: 0, eatStart: "", eatEnd: "", treat: false, weight: null, notes: ""
   });
-  const hasData = (e) => !!e && (e.water > 0 || e.veg > 0 || e.sweets > 0 || e.alcohol > 0 || e.carbs > 0 || e.sleep > 0 ||
+  const hasData = (e) => !!e && (e.water > 0 || e.veg > 0 || e.fruit > 0 || e.sweets > 0 || e.alcohol > 0 || e.carbs > 0 || e.sleep > 0 ||
     e.sleepQ > 0 || e.exercise > 0 || e.steps > 0 || e.mindful > 0 || e.mood > 0 || e.energy > 0 || e.stress > 0 || e.hunger > 0 || !!e.eatStart || !!e.eatEnd ||
     e.treat || e.weight != null || (e.notes || "").trim() !== "");
 
@@ -514,6 +515,7 @@ tr:last-child td { border-bottom: 0; }
       sleepQ: avg(pos("sleepQ")),
       carbs: avg(pos("carbs")),
       alcohol: sum(list.map((e) => e.alcohol || 0)),
+      fruit: sum(list.map((e) => e.fruit || 0)),
       sweets: sum(list.map((e) => e.sweets || 0)),
       exercise: sum(list.map((e) => e.exercise || 0)),
       steps: avg(pos("steps")),
@@ -690,6 +692,7 @@ tr:last-child td { border-bottom: 0; }
         ${windowRow(e)}
         ${counterRow("water", e)}
         ${counterRow("veg", e)}
+        ${counterRow("fruit", e)}
         <div class="row" style="--c: var(--warm)">
           <span class="ic">${icon("bread")}</span>
           <div class="lbl"><span>Carbs level</span><small>Bread, rice, pasta, pastries</small></div>
@@ -833,6 +836,7 @@ tr:last-child td { border-bottom: 0; }
         ${tile("Sleep per night", nOr(st.sleep, " h"), "--sleep")}
         ${tile("Sleep quality", rating(st.sleepQ), "--sleep")}
         ${tile("Carbs level", carbLabel(st.carbs), "--warm")}
+        ${tile("Fruit", st.fruit, "--fruit")}
         ${tile("Sweets", st.sweets, "--warm")}
         ${tile("Alcohol", st.alcohol + (st.alcohol === 1 ? " drink" : " drinks"), "--fruit")}
         ${tile("Exercise", st.exercise + " min", "--accent")}
@@ -842,7 +846,7 @@ tr:last-child td { border-bottom: 0; }
         ${tile("Energy", rating(st.energy), "--accent")}
         ${tile("Stress", rating(st.stress), "--fruit")}
         ${tile("Hunger level", rating(st.hunger), "--warm")}
-        ${tile("Weight change", signedKg(st.weightChange), "--sleep")}
+        ${tile("Weight change", signedKg(st.weightChange), "--sleep", true)}
       </div>
 
       <section class="card" aria-label="Family this week">
@@ -855,6 +859,7 @@ tr:last-child td { border-bottom: 0; }
             <tr><td>Veggie meals</td><td>${a.vegTotal}</td><td>${b.vegTotal}</td></tr>
             <tr><td>Sleep per night</td><td>${nOr(a.sleep, " h")}</td><td>${nOr(b.sleep, " h")}</td></tr>
             <tr><td>Carbs</td><td>${carbLabel(a.carbs)}</td><td>${carbLabel(b.carbs)}</td></tr>
+            <tr><td>Fruit</td><td>${a.fruit}</td><td>${b.fruit}</td></tr>
             <tr><td>Sweets</td><td>${a.sweets}</td><td>${b.sweets}</td></tr>
             <tr><td>Alcohol</td><td>${a.alcohol}</td><td>${b.alcohol}</td></tr>
             <tr><td>Exercise</td><td>${a.exercise} min</td><td>${b.exercise} min</td></tr>
