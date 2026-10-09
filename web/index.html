@@ -72,7 +72,7 @@ small, .muted { color: var(--muted); }
 .nav button:disabled { opacity: .35; cursor: default; }
 .nav button svg { width: 18px; height: 18px; }
 .nav .sub { display: block; font-size: 0.85rem; color: var(--muted); margin-top: 2px; }
-.linkbtn { border: 0; background: none; color: var(--accent); font-weight: 600; font-size: 0.85rem; padding: 2px 6px; }
+.nav .linkbtn { width: auto; height: auto; display: inline-flex; margin-top: 6px; padding: 5px 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--accent); font-weight: 600; font-size: 0.85rem; white-space: nowrap; }
 
 .card { background: var(--surface); border-radius: var(--radius); padding: 16px; display: grid; gap: 14px; }
 .group-title { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
@@ -677,7 +677,7 @@ tr:last-child td { border-bottom: 0; }
       ${whoSwitch()}
       <div class="nav">
         <button type="button" data-act="day" data-v="-1" aria-label="Previous day">${icon("left")}</button>
-        <div><h1>${title}</h1><span class="sub">${fmtDay(state.day, { day: "numeric", month: "long" })}${isToday ? "" : ` · <button type="button" class="linkbtn" data-act="day-today">Back to today</button>`}</span></div>
+        <div><h1>${title}</h1><span class="sub">${fmtDay(state.day, { day: "numeric", month: "long" })}</span>${isToday ? "" : `<button type="button" class="linkbtn" data-act="day-today">Back to today</button>`}</div>
         <button type="button" data-act="day" data-v="1" aria-label="Next day" ${isToday ? "disabled" : ""}>${icon("right")}</button>
       </div>
 
